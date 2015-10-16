@@ -578,7 +578,8 @@ class RelatedField(ApiField):
             bundle = related_resource.build_bundle(
                 obj=bundle.obj,
                 request=bundle.request,
-                objects_saved=bundle.objects_saved
+                objects_saved=bundle.objects_saved,
+                selected_fields=bundle.selected_fields
             )
             return related_resource.full_dehydrate(bundle, for_list)
 
@@ -754,7 +755,6 @@ class ToOneField(RelatedField):
 
     def dehydrate(self, bundle, for_list=True):
         foreign_obj = None
-
         if callable(self.attribute):
             previous_obj = bundle.obj
             foreign_obj = self.attribute(bundle)
@@ -777,7 +777,12 @@ class ToOneField(RelatedField):
             return None
 
         fk_resource = self.get_related_resource(foreign_obj)
-        fk_bundle = Bundle(obj=foreign_obj, request=bundle.request)
+        selected_fields = None
+        if self.attribute in bundle.selected_fields.keys():
+            if bundle.selected_fields != {}:
+                selected_fields = bundle.selected_fields[self.attribute]
+
+        fk_bundle = Bundle(obj=foreign_obj, request=bundle.request, selected_fields=selected_fields)
         return self.dehydrate_related(fk_bundle, fk_resource, for_list=for_list)
 
     def hydrate(self, bundle):

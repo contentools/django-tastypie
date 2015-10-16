@@ -718,7 +718,8 @@ class Resource(six.with_metaclass(DeclarativeMetaclass)):
 
         return auth_result
 
-    def build_bundle(self, obj=None, data=None, request=None, objects_saved=None, via_uri=None):
+    def build_bundle(self, obj=None, data=None, request=None, objects_saved=None, via_uri=None,
+                     selected_fields=None):
         """
         Given either an object, a data dictionary or both, builds a ``Bundle``
         for use throughout the ``dehydrate/hydrate`` cycle.
@@ -735,7 +736,8 @@ class Resource(six.with_metaclass(DeclarativeMetaclass)):
             data=data,
             request=request,
             objects_saved=objects_saved,
-            via_uri=via_uri
+            via_uri=via_uri,
+            selected_fields=selected_fields
         )
 
     def build_filters(self, filters=None, ignore_bad_filters=False):
@@ -890,27 +892,28 @@ class Resource(six.with_metaclass(DeclarativeMetaclass)):
 
         # Dehydrate each field.
         for field_name, field_object in self.fields.items():
-            # If it's not for use in this mode, skip
-            field_use_in = field_object.use_in
-            if callable(field_use_in):
-                if not field_use_in(bundle):
-                    continue
-            else:
-                if field_use_in not in ['all', 'list' if for_list else 'detail']:
-                    continue
+            if bundle.selected_fields == {} or field_name in bundle.selected_fields.keys():
+                # If it's not for use in this mode, skip
+                field_use_in = field_object.use_in
+                if callable(field_use_in):
+                    if not field_use_in(bundle):
+                        continue
+                else:
+                    if field_use_in not in ['all', 'list' if for_list else 'detail']:
+                        continue
 
-            # A touch leaky but it makes URI resolution work.
-            if field_object.dehydrated_type == 'related':
-                field_object.api_name = api_name
-                field_object.resource_name = resource_name
+                # A touch leaky but it makes URI resolution work.
+                if field_object.dehydrated_type == 'related':
+                    field_object.api_name = api_name
+                    field_object.resource_name = resource_name
 
-            data[field_name] = field_object.dehydrate(bundle, for_list=for_list)
+                data[field_name] = field_object.dehydrate(bundle, for_list=for_list)
 
-            # Check for an optional method to do further dehydration.
-            method = getattr(self, "dehydrate_%s" % field_name, None)
+                # Check for an optional method to do further dehydration.
+                method = getattr(self, "dehydrate_%s" % field_name, None)
 
-            if method:
-                data[field_name] = method(bundle)
+                if method:
+                    data[field_name] = method(bundle)
 
         bundle = self.dehydrate(bundle)
         return bundle
@@ -1353,8 +1356,11 @@ class Resource(six.with_metaclass(DeclarativeMetaclass)):
         to_be_serialized = paginator.page()
 
         # Dehydrate the bundles in preparation for serialization.
+        selected_fields = request.GET.get('fields', None)
+        if selected_fields:
+            selected_fields = selected_fields.split(',')
         bundles = [
-            self.full_dehydrate(self.build_bundle(obj=obj, request=request), for_list=True)
+            self.full_dehydrate(self.build_bundle(obj=obj, request=request, selected_fields=selected_fields), for_list=True)
             for obj in to_be_serialized[self._meta.collection_name]
         ]
 
@@ -1380,7 +1386,11 @@ class Resource(six.with_metaclass(DeclarativeMetaclass)):
         except MultipleObjectsReturned:
             return http.HttpMultipleChoices("More than one resource is found at this URI.")
 
-        bundle = self.build_bundle(obj=obj, request=request)
+        selected_fields = request.GET.get('fields', None)
+        if selected_fields:
+            selected_fields = selected_fields.split(',')
+
+        bundle = self.build_bundle(obj=obj, request=request, selected_fields=selected_fields)
         bundle = self.full_dehydrate(bundle)
         bundle = self.alter_detail_data_to_serialize(request, bundle)
         return self.create_response(request, bundle)
@@ -1984,7 +1994,7 @@ class BaseModelResource(Resource):
         return [self.fields[field_name].attribute]
 
     def filter_value_to_python(self, value, field_name, filters, filter_expr,
-            filter_type):
+                               filter_type):
         """
         Turn the string ``value`` into a python object.
         """
