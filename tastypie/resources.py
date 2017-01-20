@@ -2448,7 +2448,7 @@ class BaseModelResource(Resource):
                         request=bundle.request,
                         objects_saved=bundle.objects_saved
                     )
-                    if related_resource.full:
+                    if field_object.full:
                         related_resource.save(related_bundle)
                     related_obj = related_bundle.obj
 
